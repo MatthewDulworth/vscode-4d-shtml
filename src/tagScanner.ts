@@ -32,9 +32,9 @@ export function scanTags(docText: string): ScannedTag[] {
         let nameEnd = 0;
 
         if (match.indices && match.indices[1]) {
-            const indicies = match.indices[1];
-            nameStart = indicies[0];
-            nameEnd = indicies[1];
+            const indices = match.indices[1];
+            nameStart = indices[0];
+            nameEnd = indices[1];
         }
 
         const tag: ScannedTag = {
@@ -56,24 +56,31 @@ export function scanTags(docText: string): ScannedTag[] {
         const openEnd = match.index + match[0].length;
         const close = docText.indexOf("-->", openEnd);
         const nextOpen = docText.indexOf("<!--", openEnd);
+        let rawExpr = "";
 
         // If there is a close tag that closes before the next tag or html comment open
         if ((close !== NONE) && (nextOpen === NONE || close < nextOpen)) {
             tag.closed = true;
             tag.tagEnd = close + 3;
 
-            const raw = docText.slice(tag.nameEnd, close);
-            const leading = raw.length - raw.trimStart().length;
-            tag.expr = raw.trim();
-            tag.exprStart = tag.nameEnd + leading;
-            tag.exprEnd = tag.exprStart + tag.expr.length;
+            rawExpr = docText.slice(tag.nameEnd, close);
+            tag.multiline = rawExpr.indexOf("\n") !== NONE;
+        } else  {
+            tag.tagEnd = (nextOpen !== NONE) ? nextOpen : docText.length;
 
-            tag.multiline = raw.indexOf("\n") !== NONE;
-        } else if (nextOpen !== NONE) {
-            tag.tagEnd = nextOpen;
-        } else {
-            tag.tagEnd = docText.length;
-        } 
+            const lineEnd = docText. indexOf("\n", tag.nameEnd);
+            const exprLimit = Math.min(
+                tag.tagEnd,
+                lineEnd === NONE ? docText.length : lineEnd
+            );
+
+            rawExpr = docText.slice(tag.nameEnd, exprLimit);
+        }
+
+        const leading = rawExpr.length - rawExpr.trimStart().length;
+        tag.expr = rawExpr.trim();
+        tag.exprStart = tag.nameEnd + leading;
+        tag.exprEnd = tag.exprStart + tag.expr.length;
 
         tags.push(tag);
         OPENER.lastIndex = tag.tagEnd;
