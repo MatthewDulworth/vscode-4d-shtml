@@ -2,7 +2,8 @@
   "compilerOptions": {
     "target": "ES2022", "module": "commonjs", "lib": ["ES2022"],
     "strict": true, "sourceMap": true, "outDir": "dist",
-    "rootDir": "src", "skipLibCheck": true
+    "rootDir": "src", "skipLibCheck": true,
+    "types": ["node"]
   },
   "include": ["src"]
 }

@@ -2,7 +2,7 @@
   "name": "4d-shtml-ext",
   "displayName": "4D SHTML Tags",
   "version": "0.0.1",
-  "publisher": "Matthew Dulworth",
+  "publisher": "mdulworth",
   "description": "4D transformation tag support for .shtml template pages",
   "categories": [
     "Programming Languages"
@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "1.85.0",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.28.1",
     "typescript": "^7.0.2",
