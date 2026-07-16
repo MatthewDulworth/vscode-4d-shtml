@@ -16,7 +16,10 @@ export interface ScannedTag {
 
 export type TokenKind = 'delimiter'|'tagName'|'variable'|'operator'|'number'|'string'|'brace'|'paren';
 export interface ExprToken { kind: TokenKind; start: number; end: number; }
+
 const OPENER = /<!--#(4[Dd][A-Za-z0-9_]*)/gd;
+// Token group names MUST match every (and only) name in TokenKind
+const TOKEN = /(?<string>"[^"]*")|(?<operator><=|>=|[=#<>])|(?<number>\d+(?:\.\d+)?)|(?<brace>[{}])|(?<paren>[()])|(?<variable>[A-Za-z_][A-Za-z0-9_]*)/g;
 const NONE = -1;
 
 export function scanTags(docText: string): ScannedTag[] {
@@ -89,6 +92,43 @@ export function scanTags(docText: string): ScannedTag[] {
     return tags;
 }
 
-export function tokenizeTag(text: string, tag: ScannedTag): ExprToken[] {
-    return [];
+export function tokenizeTag(docText: string, tag: ScannedTag): ExprToken[] {
+    const tokens: ExprToken[] = [];
+
+    tokens.push({
+        kind: 'delimiter',
+        start: tag.tagStart, 
+        end: tag.tagStart + 5,
+    });
+
+    tokens.push({
+        kind: 'tagName',
+        start: tag.nameStart,
+        end: tag.nameEnd,
+    });
+
+    for (const match of tag.expr.matchAll(TOKEN)) {
+        // Confirm groups defined
+        const groups = match.groups ?? {}; 
+        // Get the names of all the groups
+        const groupNames = Object.keys(groups); 
+        // Find the group name that isn't undefined
+        const kind = groupNames.find(name => groups[name] !== undefined) as TokenKind;
+
+        tokens.push({
+            kind: kind,
+            start: tag.exprStart + match.index,
+            end: tag.exprStart + match.index + match[0].length,
+        });
+    }
+
+    if (tag.closed) {
+        tokens.push({
+            kind: 'delimiter',
+            start: tag.tagEnd - 3,
+            end: tag.tagEnd,
+        });
+    }
+
+    return tokens;
 }

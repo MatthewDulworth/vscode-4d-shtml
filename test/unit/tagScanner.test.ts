@@ -201,8 +201,167 @@ describe('scanTags', () => {
     });
 });
 
+// --- tokenizeTag ---
+
+import type { ExprToken, TokenKind } from '../../src/tagScanner';
+
+const t = (kind: TokenKind, start: number, end: number): ExprToken => ({ kind, start, end });
+
+// Scans doc, tokenizes the tag at tagIndex.
+function tokensFor(doc: string, tagIndex = 0): ExprToken[] {
+    const tags = scanTags(doc);
+    expect(tags.length, 'scanTags found the tag under test').toBeGreaterThan(tagIndex);
+    return tokenizeTag(doc, tags[tagIndex]);
+}
+
+// Property-by-property soft comparison (same rationale as expectTags), plus
+// universal invariants: tokens are non-empty, in ascending order, and
+// non-overlapping. Reports the actual sliced text alongside offset
+// mismatches to make failures readable.
+function expectTokens(doc: string, actual: ExprToken[], expected: ExprToken[]) {
+    expect.soft(
+        actual.map(tok => `${tok.kind}:${JSON.stringify(doc.slice(tok.start, tok.end))}`),
+        'token kinds and texts',
+    ).toEqual(expected.map(tok => `${tok.kind}:${JSON.stringify(doc.slice(tok.start, tok.end))}`));
+
+    const count = Math.min(actual.length, expected.length);
+    for (let i = 0; i < count; i++) {
+        expect.soft(actual[i].kind, `tokens[${i}].kind`).toBe(expected[i].kind);
+        expect.soft(actual[i].start, `tokens[${i}].start`).toBe(expected[i].start);
+        expect.soft(actual[i].end, `tokens[${i}].end`).toBe(expected[i].end);
+    }
+
+    for (let i = 0; i < actual.length; i++) {
+        expect.soft(actual[i].end, `tokens[${i}] is non-empty`).toBeGreaterThan(actual[i].start);
+        if (i > 0) {
+            expect.soft(actual[i].start, `tokens[${i}] starts after tokens[${i - 1}] ends`)
+                .toBeGreaterThanOrEqual(actual[i - 1].end);
+        }
+    }
+}
+
 describe('tokenizeTag', () => {
-    it('returns an empty array (stub implementation)', () => {
-        expect(tokenizeTag('irrelevant text', makeTag())).toEqual([]);
+    it('tokenizes a simple variable tag: delimiters, name, variable', () => {
+        const doc = '<!--#4DVAR vDBName-->';
+        expectTokens(doc, tokensFor(doc), [
+            t('delimiter', 0, 5),    // <!--#
+            t('tagName', 5, 10),     // 4DVAR
+            t('variable', 11, 18),   // vDBName
+            t('delimiter', 18, 21),  // -->
+        ]);
+    });
+
+    it('tokenizes an array subscript: variable, brace, variable, brace', () => {
+        const doc = '<!--#4DVAR aData1{aData1}-->';
+        expectTokens(doc, tokensFor(doc), [
+            t('delimiter', 0, 5),
+            t('tagName', 5, 10),
+            t('variable', 11, 17),   // aData1
+            t('brace', 17, 18),      // {
+            t('variable', 18, 24),   // aData1
+            t('brace', 24, 25),      // }
+            t('delimiter', 25, 28),
+        ]);
+    });
+
+    it('tokenizes the real corpus 4DIF comparison expression', () => {
+        // From sub_co_review.shtml
+        const doc = '<!--#4DIF (aData3{aData1}=aData4{aData4})-->';
+        expectTokens(doc, tokensFor(doc), [
+            t('delimiter', 0, 5),
+            t('tagName', 5, 9),      // 4DIF
+            t('paren', 10, 11),
+            t('variable', 11, 17),   // aData3
+            t('brace', 17, 18),
+            t('variable', 18, 24),   // aData1
+            t('brace', 24, 25),
+            t('operator', 25, 26),   // =
+            t('variable', 26, 32),   // aData4
+            t('brace', 32, 33),
+            t('variable', 33, 39),   // aData4
+            t('brace', 39, 40),
+            t('paren', 40, 41),
+            t('delimiter', 41, 44),
+        ]);
+    });
+
+    it('tokenizes a decimal number as a single token', () => {
+        const doc = '<!--#4DEVAL 3.14-->';
+        expectTokens(doc, tokensFor(doc), [
+            t('delimiter', 0, 5),
+            t('tagName', 5, 11),     // 4DEVAL
+            t('number', 12, 16),     // 3.14
+            t('delimiter', 16, 19),
+        ]);
+    });
+
+    it('tokenizes a string literal including its quotes', () => {
+        const doc = '<!--#4DIF (vX="hi")-->';
+        expectTokens(doc, tokensFor(doc), [
+            t('delimiter', 0, 5),
+            t('tagName', 5, 9),
+            t('paren', 10, 11),
+            t('variable', 11, 13),   // vX
+            t('operator', 13, 14),   // =
+            t('string', 14, 18),     // "hi"
+            t('paren', 18, 19),
+            t('delimiter', 19, 22),
+        ]);
+    });
+
+    it("tokenizes 4D's # not-equal as an operator, not junk", () => {
+        const doc = '<!--#4DIF (vX#1)-->';
+        expectTokens(doc, tokensFor(doc), [
+            t('delimiter', 0, 5),
+            t('tagName', 5, 9),
+            t('paren', 10, 11),
+            t('variable', 11, 13),
+            t('operator', 13, 14),   // #
+            t('number', 14, 15),
+            t('paren', 15, 16),
+            t('delimiter', 16, 19),
+        ]);
+    });
+
+    it('tokenizes <= as one operator token, not < then junk', () => {
+        const doc = '<!--#4DIF (vX<=2)-->';
+        expectTokens(doc, tokensFor(doc), [
+            t('delimiter', 0, 5),
+            t('tagName', 5, 9),
+            t('paren', 10, 11),
+            t('variable', 11, 13),
+            t('operator', 13, 15),   // <=
+            t('number', 15, 16),
+            t('paren', 16, 17),
+            t('delimiter', 17, 20),
+        ]);
+    });
+
+    it('emits no closing delimiter for an unclosed tag', () => {
+        const doc = '<!--#4DVAR vNa';
+        expectTokens(doc, tokensFor(doc), [
+            t('delimiter', 0, 5),
+            t('tagName', 5, 10),
+            t('variable', 11, 14),   // vNa — partial, still colored while typing
+        ]);
+    });
+
+    it('tokenizes an empty-expression tag as delimiters and name only', () => {
+        const doc = '<!--#4DENDLOOP-->';
+        expectTokens(doc, tokensFor(doc), [
+            t('delimiter', 0, 5),
+            t('tagName', 5, 14),
+            t('delimiter', 14, 17),
+        ]);
+    });
+
+    it('skips padding whitespace without emitting tokens', () => {
+        const doc = '<!--#4DVAR   vName  -->';
+        expectTokens(doc, tokensFor(doc), [
+            t('delimiter', 0, 5),
+            t('tagName', 5, 10),
+            t('variable', 13, 18),   // vName
+            t('delimiter', 20, 23),
+        ]);
     });
 });
